@@ -1,0 +1,17 @@
+[server]
+# Permite uploads de até 50 MB, conforme requisito do app
+maxUploadSize = 50
+
+# Faz o Streamlit escutar em todas as interfaces de rede do container,
+# necessário para funcionar dentro do Docker
+address = "0.0.0.0"
+port = 8501
+
+# Desativa a checagem de CORS/XSRF que pode causar problemas atrás de
+# proxies reversos (Nginx, Traefik). Ajuste se for expor publicamente
+# sem um proxy à frente com HTTPS.
+enableCORS = false
+enableXsrfProtection = false
+
+[browser]
+gatherUsageStats = false

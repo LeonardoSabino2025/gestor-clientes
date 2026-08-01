@@ -1,0 +1,31 @@
+# Controle de versão
+.git
+.gitignore
+
+# Ambientes virtuais e caches Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# Arquivos de sistema operacional
+.DS_Store
+Thumbs.db
+
+# Editores/IDE
+.vscode/
+.idea/
+
+# Arquivos de dados de teste que não devem ir para a imagem
+*.xlsx
+*.csv
+!requirements.txt
+
+# Logs
+*.log
+
+# Documentação (não é necessária dentro da imagem)
+README.md
+DEPLOY.md
