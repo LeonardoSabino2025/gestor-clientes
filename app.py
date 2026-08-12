@@ -1,13 +1,18 @@
 """
-App: Gestor de Clientes - Extrator de Telefones por POP/Bairro
+App: Gestor de Clientes - Extrator de Telefones
 Autor: Gerado com apoio de Engenharia de Software
 Descrição:
-    Aplicativo Streamlit que recebe uma planilha .xlsx de clientes,
-    filtra por POP e Bairro, extrai todos os números de celular
-    válidos das colunas "Celulares" e "Telefones" (mesmo quando há
+    Aplicativo Streamlit que recebe uma planilha .xlsx de clientes e
+    extrai o PRIMEIRO número de celular válido de cada cliente, a
+    partir das colunas "Celulares" e "Telefones" (mesmo quando há
     múltiplos números em uma única célula), formata no padrão
-    (XX) 9XXXX-XXXX e gera uma planilha final para download,
-    tudo em memória (sem gravar arquivos temporários em disco).
+    (XX) 9XXXX-XXXX e gera uma planilha final para download com as
+    colunas "Nome" e "Numero", tudo em memória (sem gravar arquivos
+    temporários em disco).
+
+    Dois modos de processamento:
+      1. Filtrar por POP e Bairro (comportamento original).
+      2. Todos os clientes (sem filtro) — processa a planilha inteira.
 """
 
 import io
@@ -89,22 +94,19 @@ def formatar_celular(digitos: str) -> str | None:
 def gerar_linhas_cliente(nome: str, celulares_raw: str, telefones_raw: str) -> list[dict]:
     """
     Para um cliente, junta os números encontrados em "Celulares" e
-    "Telefones", formata cada um e retorna uma lista de dicionários
-    {"Nome": ..., "Numero": ...} — uma linha por número válido.
+    "Telefones" (nessa ordem) e retorna uma lista com NO MÁXIMO uma linha
+    {"Nome": ..., "Numero": ...}: a do PRIMEIRO número válido encontrado.
     Se nenhum número válido for encontrado, retorna lista vazia
-    (o cliente é descartado).
+    (o cliente é descartado, conforme regra do "Caso 5").
     """
     todos_numeros_brutos = extrair_numeros(celulares_raw) + extrair_numeros(telefones_raw)
 
-    linhas = []
-    numeros_ja_usados = set()  # evita duplicar o mesmo número para o mesmo cliente
     for bruto in todos_numeros_brutos:
         formatado = formatar_celular(bruto)
-        if formatado and formatado not in numeros_ja_usados:
-            linhas.append({"Nome": nome, "Numero": formatado})
-            numeros_ja_usados.add(formatado)
+        if formatado:
+            return [{"Nome": nome, "Numero": formatado}]
 
-    return linhas
+    return []
 
 
 # ---------------------------------------------------------------------------
@@ -171,10 +173,10 @@ def gerar_excel_em_memoria(df_final: pd.DataFrame) -> io.BytesIO:
 # INTERFACE (UI)
 # ---------------------------------------------------------------------------
 
-st.title("📞 Extrator de Telefones por POP e Bairro")
+st.title("📞 Extrator de Telefones de Clientes")
 st.caption(
-    "Faça upload da planilha de clientes, escolha o POP e o Bairro, "
-    "e baixe uma planilha limpa apenas com Nome e Número (celular)."
+    "Faça upload da planilha de clientes e baixe uma planilha limpa "
+    "apenas com Nome e Número (celular) — com ou sem filtro por POP e Bairro."
 )
 
 arquivo = st.file_uploader(
@@ -194,26 +196,46 @@ if arquivo is not None:
 
     st.success(f"Planilha carregada com sucesso! {len(df)} linhas encontradas.")
 
-    # --- Selectbox 1: POP ---
-    pops_disponiveis = sorted(df[COL_POP].dropna().unique().tolist())
-    pop_selecionado = st.selectbox("2. Selecione o POP", options=pops_disponiveis)
+    # --- Escolha do modo de processamento ---
+    modo = st.radio(
+        "2. Como deseja processar a planilha?",
+        options=[
+            "Filtrar por POP e Bairro",
+            "Todos os clientes (sem filtro)",
+        ],
+        horizontal=True,
+    )
 
-    # --- Selectbox 2: Bairro, filtrado dinamicamente pelo POP escolhido ---
-    df_pop = df[df[COL_POP] == pop_selecionado]
-    bairros_disponiveis = sorted(df_pop[COL_BAIRRO].dropna().unique().tolist())
+    df_filtrado = None
+    nome_arquivo_saida = "contatos.xlsx"
 
-    if not bairros_disponiveis:
-        st.warning("Nenhum bairro encontrado para o POP selecionado.")
-        st.stop()
+    if modo == "Filtrar por POP e Bairro":
+        # --- Selectbox 1: POP ---
+        pops_disponiveis = sorted(df[COL_POP].dropna().unique().tolist())
+        pop_selecionado = st.selectbox("3. Selecione o POP", options=pops_disponiveis)
 
-    bairro_selecionado = st.selectbox("3. Selecione o Bairro", options=bairros_disponiveis)
+        # --- Selectbox 2: Bairro, filtrado dinamicamente pelo POP escolhido ---
+        df_pop = df[df[COL_POP] == pop_selecionado]
+        bairros_disponiveis = sorted(df_pop[COL_BAIRRO].dropna().unique().tolist())
 
-    # --- Filtro final ---
-    df_filtrado = df_pop[df_pop[COL_BAIRRO] == bairro_selecionado]
-    st.info(f"{len(df_filtrado)} clientes encontrados para este POP + Bairro.")
+        if not bairros_disponiveis:
+            st.warning("Nenhum bairro encontrado para o POP selecionado.")
+            st.stop()
+
+        bairro_selecionado = st.selectbox("4. Selecione o Bairro", options=bairros_disponiveis)
+
+        # --- Filtro final ---
+        df_filtrado = df_pop[df_pop[COL_BAIRRO] == bairro_selecionado]
+        st.info(f"{len(df_filtrado)} clientes encontrados para este POP + Bairro.")
+        nome_arquivo_saida = f"contatos_{pop_selecionado}_{bairro_selecionado}.xlsx".replace(" ", "_")
+    else:
+        # --- Sem filtro: usa a planilha inteira ---
+        df_filtrado = df
+        st.info(f"Nenhum filtro aplicado. {len(df_filtrado)} clientes serão processados.")
+        nome_arquivo_saida = "contatos_todos.xlsx"
 
     # --- Botão de geração ---
-    if st.button("4. Gerar e Baixar Planilha", type="primary"):
+    if st.button("5. Gerar e Baixar Planilha", type="primary"):
         with st.spinner("Processando números e gerando planilha..."):
             df_final = montar_planilha_final(df_filtrado)
 
@@ -231,7 +253,7 @@ if arquivo is not None:
             st.download_button(
                 label="⬇️ Baixar Planilha (.xlsx)",
                 data=excel_buffer,
-                file_name=f"contatos_{pop_selecionado}_{bairro_selecionado}.xlsx".replace(" ", "_"),
+                file_name=nome_arquivo_saida,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
 else:
